@@ -2007,32 +2007,38 @@ function Necrosis:DestroyExtraShards()
 
 	if NecrosisConfig.DestroyCount >= actualCount then return end
 
+	-- Collect destructible stacks (skip soul pouches and bags beyond) and drain
+	-- the smallest ones first so we consolidate inventory rather than chip slots
+	-- off full stacks.
+	local stacks = {}
 	for container = 0, 4, 1 do
 		if Local.BagIsSoulPouch[container + 1] then break end
 		for slot=1, GetContainerNumSlots(container), 1 do
-			if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
 			local itemLink = GetContainerItemLink(container, slot)
-			if (itemLink) then
+			if itemLink then
 				local _, itemID = strsplit(":", itemLink)
-				itemID = tonumber(itemID)
-				if (itemID == 6265) then
-					local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
+				if tonumber(itemID) == 6265 then
 					local _, stackCount = GetContainerItemInfo(container, slot)
-					stackCount = stackCount or 1
-					local toDelete = math.min(excess, stackCount)
-					if toDelete < stackCount then
-						SplitContainerItem(container, slot, toDelete)
-					else
-						PickupContainerItem(container, slot)
-					end
-					if (CursorHasItem()) then
-						DeleteCursorItem()
-						Local.Soulshard.Count = Local.Soulshard.Count - toDelete
-					end
+					table.insert(stacks, {container = container, slot = slot, count = stackCount or 1})
 				end
 			end
 		end
+	end
+	table.sort(stacks, function(a, b) return a.count < b.count end)
+
+	for _, stack in ipairs(stacks) do
 		if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
+		local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
+		local toDelete = math.min(excess, stack.count)
+		if toDelete < stack.count then
+			SplitContainerItem(stack.container, stack.slot, toDelete)
+		else
+			PickupContainerItem(stack.container, stack.slot)
+		end
+		if (CursorHasItem()) then
+			DeleteCursorItem()
+			Local.Soulshard.Count = Local.Soulshard.Count - toDelete
+		end
 	end
 end
 
