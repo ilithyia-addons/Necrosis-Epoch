@@ -52,6 +52,14 @@ Project Epoch ships with a few quality-of-life tweaks that diverge from retail b
 
 ## Changelog
 
+### 3.1.1
+
+**Improved: shard auto-destroy now drains the smallest stacks first.**
+
+Previously, when a new shard pushed you over the limit, Necrosis would split a shard off whichever stack it iterated to first — typically a full 3-stack — and leave any partial 1-stack in place. The result occupied an extra bag slot for no reason.
+
+The destroy routine now collects every destructible shard stack, sorts them ascending by stack size, and trims from the smallest first. With stacks `3, 3, 1` and a "keep 6" limit, the lone 1-stack is the one that gets removed, freeing the slot it occupied.
+
 ### 3.1.0 — Project Epoch Edition
 
 **Fixed: "Maximum number of shards to keep" destroys all shards on Project Epoch.**
