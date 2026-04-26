@@ -1907,23 +1907,30 @@ function Necrosis:BagExplore(arg)
 	if NecrosisConfig.DestroyShard
 		and NecrosisConfig.DestroyCount
 		and NecrosisConfig.DestroyCount > 0
+		and NecrosisConfig.DestroyCount < Local.Soulshard.Count
 		then
 			for container = 0, 4, 1 do
 				if Local.BagIsSoulPouch[container + 1] then break end
 				for slot=1, GetContainerNumSlots(container), 1 do
+					if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
 					local itemLink = GetContainerItemLink(container, slot)
 					if (itemLink) then
 						local _, itemID = strsplit(":", itemLink)
 						itemID = tonumber(itemID)
 						if (itemID == 6265) then
-							if (NecrosisConfig.DestroyCount < Local.Soulshard.Count) then
+							local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
+							local _, stackCount = GetContainerItemInfo(container, slot)
+							stackCount = stackCount or 1
+							local toDelete = math.min(excess, stackCount)
+							if toDelete < stackCount then
+								SplitContainerItem(container, slot, toDelete)
+							else
 								PickupContainerItem(container, slot)
-								if (CursorHasItem()) then
-									DeleteCursorItem()
-									Local.Soulshard.Count = GetItemCount(6265)
-								end 
 							end
-							break
+							if (CursorHasItem()) then
+								DeleteCursorItem()
+								Local.Soulshard.Count = Local.Soulshard.Count - toDelete
+							end
 						end
 					end
 				end
@@ -2037,11 +2044,19 @@ function Necrosis:FindSlot(shardIndex, shardSlot)
 	-- destory extra shards if the option is enabled || Destruction des fragments en sur-nombre si l'option est activée
 	if (full and NecrosisConfig.SoulshardDestroy) then
 		if (NecrosisConfig.DestroyCount < Local.Soulshard.Count) then
-			PickupContainerItem(shardIndex, shardSlot)
+			local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
+			local _, stackCount = GetContainerItemInfo(shardIndex, shardSlot)
+			stackCount = stackCount or 1
+			local toDelete = math.min(excess, stackCount)
+			if toDelete < stackCount then
+				SplitContainerItem(shardIndex, shardSlot, toDelete)
+			else
+				PickupContainerItem(shardIndex, shardSlot)
+			end
 			if (CursorHasItem()) then
 				DeleteCursorItem()
-				Local.Soulshard.Count = GetItemCount(6265)
-			end 
+				Local.Soulshard.Count = Local.Soulshard.Count - toDelete
+			end
 		end
 	end
 end
