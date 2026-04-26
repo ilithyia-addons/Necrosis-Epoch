@@ -317,7 +317,7 @@ Local.LastSphereSkin = "Aucune"
 Local.Trade = {}
 
 -- Variables utilisées pour la gestion des fragments d'âme
-Local.Soulshard = {Count = 0, Move = 0}
+Local.Soulshard = {Count = 0, Move = 0, DestroyAt = nil}
 Local.BagIsSoulPouch = {}
 
 -- Variables utilisées pour les avertissements
@@ -373,6 +373,12 @@ end
 function Necrosis:OnUpdate(elapsed)
 	Local.LastUpdate[1] = Local.LastUpdate[1] + elapsed
 	Local.LastUpdate[2] = Local.LastUpdate[2] + elapsed
+
+	-- Fire the deferred destroy check once bag updates have been quiet long enough
+	if Local.Soulshard.DestroyAt and GetTime() >= Local.Soulshard.DestroyAt then
+		Local.Soulshard.DestroyAt = nil
+		self:DestroyExtraShards()
+	end
 
 	-- Si défilement lisse des timers, on les met à jours le plus vite possible
 	if NecrosisConfig.Smooth then
@@ -1903,39 +1909,16 @@ function Necrosis:BagExplore(arg)
 	Local.Reagent.Infernal = GetItemCount(5565)
 	Local.Reagent.Demoniac = GetItemCount(16583)
 
-	-- Destroy extra shards (if enabled) || Si il y a un nombre maximum de fragments à conserver, on enlève les supplémentaires
+	-- Schedule a debounced destroy check. Each BAG_UPDATE pushes the deadline forward,
+	-- so destruction only runs after bag updates have been quiet for ~0.3s. This avoids
+	-- the transient overcounts that arise mid-merge (BAG_UPDATE can fire while one slot
+	-- has been incremented but the source slot or cursor hasn't cleared yet, leading
+	-- GetItemCount to briefly report more shards than the player actually owns).
 	if NecrosisConfig.DestroyShard
 		and NecrosisConfig.DestroyCount
 		and NecrosisConfig.DestroyCount > 0
-		and NecrosisConfig.DestroyCount < Local.Soulshard.Count
 		then
-			for container = 0, 4, 1 do
-				if Local.BagIsSoulPouch[container + 1] then break end
-				for slot=1, GetContainerNumSlots(container), 1 do
-					if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
-					local itemLink = GetContainerItemLink(container, slot)
-					if (itemLink) then
-						local _, itemID = strsplit(":", itemLink)
-						itemID = tonumber(itemID)
-						if (itemID == 6265) then
-							local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
-							local _, stackCount = GetContainerItemInfo(container, slot)
-							stackCount = stackCount or 1
-							local toDelete = math.min(excess, stackCount)
-							if toDelete < stackCount then
-								SplitContainerItem(container, slot, toDelete)
-							else
-								PickupContainerItem(container, slot)
-							end
-							if (CursorHasItem()) then
-								DeleteCursorItem()
-								Local.Soulshard.Count = Local.Soulshard.Count - toDelete
-							end
-						end
-					end
-				end
-				if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
-			end
+			Local.Soulshard.DestroyAt = GetTime() + 0.3
 	end
 
 	-- updtae the main (sphere) button display || Affichage du bouton principal de Necrosis
@@ -1995,6 +1978,64 @@ function Necrosis:BagExplore(arg)
 	end
 end
 
+-- Trim shards above the user-configured limit. Called from OnUpdate after the
+-- bag-update debounce has settled, so the inventory state is stable.
+function Necrosis:DestroyExtraShards()
+	if not (NecrosisConfig.DestroyShard
+		and NecrosisConfig.DestroyCount
+		and NecrosisConfig.DestroyCount > 0) then
+		return
+	end
+	if CursorHasItem() then return end
+
+	-- Recount shards directly from bag slots so we don't depend on whatever
+	-- GetItemCount happens to report on this server.
+	local actualCount = 0
+	for container = 0, 4, 1 do
+		for slot=1, GetContainerNumSlots(container), 1 do
+			local itemLink = GetContainerItemLink(container, slot)
+			if itemLink then
+				local _, itemID = strsplit(":", itemLink)
+				if tonumber(itemID) == 6265 then
+					local _, stackCount = GetContainerItemInfo(container, slot)
+					actualCount = actualCount + (stackCount or 1)
+				end
+			end
+		end
+	end
+	Local.Soulshard.Count = actualCount
+
+	if NecrosisConfig.DestroyCount >= actualCount then return end
+
+	for container = 0, 4, 1 do
+		if Local.BagIsSoulPouch[container + 1] then break end
+		for slot=1, GetContainerNumSlots(container), 1 do
+			if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
+			local itemLink = GetContainerItemLink(container, slot)
+			if (itemLink) then
+				local _, itemID = strsplit(":", itemLink)
+				itemID = tonumber(itemID)
+				if (itemID == 6265) then
+					local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
+					local _, stackCount = GetContainerItemInfo(container, slot)
+					stackCount = stackCount or 1
+					local toDelete = math.min(excess, stackCount)
+					if toDelete < stackCount then
+						SplitContainerItem(container, slot, toDelete)
+					else
+						PickupContainerItem(container, slot)
+					end
+					if (CursorHasItem()) then
+						DeleteCursorItem()
+						Local.Soulshard.Count = Local.Soulshard.Count - toDelete
+					end
+				end
+			end
+		end
+		if NecrosisConfig.DestroyCount >= Local.Soulshard.Count then break end
+	end
+end
+
 -- allows you to find / arrange shards in bags || Fonction qui permet de trouver / ranger les fragments dans les sacs
 function Necrosis:SoulshardSwitch(Type)
 	if (Type == "CHECK") then Local.Soulshard.Move = 0 end
@@ -2043,7 +2084,7 @@ function Necrosis:FindSlot(shardIndex, shardSlot)
 	end
 	-- destory extra shards if the option is enabled || Destruction des fragments en sur-nombre si l'option est activée
 	if (full and NecrosisConfig.SoulshardDestroy) then
-		if (NecrosisConfig.DestroyCount < Local.Soulshard.Count) then
+		if (NecrosisConfig.DestroyCount < Local.Soulshard.Count) and not CursorHasItem() then
 			local excess = Local.Soulshard.Count - NecrosisConfig.DestroyCount
 			local _, stackCount = GetContainerItemInfo(shardIndex, shardSlot)
 			stackCount = stackCount or 1

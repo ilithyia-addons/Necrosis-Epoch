@@ -61,12 +61,14 @@ On servers where soul shards stack (Project Epoch stacks them by 3), the auto-de
 1. **Whole-stack deletion.** `PickupContainerItem` + `DeleteCursorItem` always deleted the entire stack. With stacks of 3, every "delete one shard" operation actually removed 3, frequently overshooting and wiping the inventory.
 2. **Async inventory desync.** `GetItemCount` was queried immediately after deletion, but the client doesn't reflect the change instantly — so the loop kept reading the *old* count and deleting again on subsequent bag passes.
 3. **One-stack-per-bag cap.** The inner loop broke after processing the first shard stack found in each bag, capping deletions at 5 stacks total. With 20 shards stored in a single bag, only 3 would ever be removed.
+4. **Mid-merge race.** `BAG_UPDATE` fires multiple times during a single stack merge, and at intermediate points one slot may already be incremented while another hasn't yet decremented (or the cursor still holds the source item). `GetItemCount` briefly reports more shards than the player actually owns, tripping the destroy guard. With 6 shards and a "keep 6" limit, restacking 3+2+1 → 3+3 would cause Necrosis to wrongly delete a shard.
 
 The destroy routine now:
 
 - Reads the actual stack size with `GetContainerItemInfo` and uses `SplitContainerItem` to peel off the exact number of excess shards from a stack.
 - Tracks the running count locally instead of relying on `GetItemCount` after each delete.
 - Continues iterating slots within a bag until the target shard count is reached.
+- Runs on a debounced timer rather than on every `BAG_UPDATE`. Each event pushes the deadline forward, so destruction only fires once bag updates have been quiet for ~0.3s and the inventory is stable. The shard total is then recounted directly from bag slots — never from `GetItemCount` — so cursor or cross-slot transients can't mislead it.
 
 Both call sites (`Necrosis.lua` `BagExplore` and `FindSlot`) were patched.
 
