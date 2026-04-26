@@ -1,18 +1,7 @@
 # Necrosis — Project Epoch Edition
 
 <p align="center">
-  <img src="UI/Necrosis.tga" alt="Necrosis" width="96" />
-</p>
-
-<p align="center">
   <strong>The classic Warlock UI &amp; shard manager, polished for Project Epoch.</strong>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.0-9b4dca?style=flat-square" alt="Version" />
-  <img src="https://img.shields.io/badge/client-3.3.5%20WotLK-1f6feb?style=flat-square" alt="Client" />
-  <img src="https://img.shields.io/badge/server-Project%20Epoch-7c5cff?style=flat-square" alt="Server" />
-  <img src="https://img.shields.io/badge/license-GPL%20v2-d62828?style=flat-square" alt="License" />
 </p>
 
 ---
